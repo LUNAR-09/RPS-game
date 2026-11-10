@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 가위바위보 파티</title>
+<style>
+  :root {
+    --bg1: #1b0838; --bg2: #3a0a5c; --card: rgba(255,255,255,0.08);
+    --pink: #ff4fa3; --cyan: #35e0ff; --yellow: #ffe14d; --lime: #8cff6a; --orange: #ff9a3d;
+    --text: #fff7ff; --muted: #cdb4ec;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text);
+    font-family: "Jua", "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(255,79,163,0.45), transparent 40%),
+      radial-gradient(circle at 85% 20%, rgba(53,224,255,0.35), transparent 40%),
+      radial-gradient(circle at 50% 100%, rgba(255,225,77,0.25), transparent 45%),
+      linear-gradient(160deg, var(--bg1), var(--bg2));
+    background-attachment: fixed;
+    overflow-x: hidden;
+  }
+  .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+  .confetti i { position: absolute; top: -20px; width: 10px; height: 16px; opacity: 0.85; animation: fall linear infinite; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+  @media (prefers-reduced-motion: reduce) { .confetti { display: none; } }
+
+  main { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px 14px 40px; }
+
+  header { text-align: center; }
+  header h1 {
+    margin: 0; font-size: clamp(2rem, 6vw, 3.4rem); letter-spacing: -0.02em;
+    background: linear-gradient(90deg, var(--pink), var(--yellow), var(--cyan), var(--lime), var(--pink));
+    background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shine 5s linear infinite;
+    filter: drop-shadow(0 0 12px rgba(255,79,163,0.6));
+  }
+  @keyframes shine { to { background-position: 300% 0; } }
+  .hands { font-size: clamp(2.2rem, 6vw, 3.4rem); display: flex; gap: 10px; justify-content: center; margin-bottom: 4px; }
+  .hands span { display: inline-block; animation: hop 1.2s ease-in-out infinite; }
+  .hands span:nth-child(2) { animation-delay: 0.2s; } .hands span:nth-child(3) { animation-delay: 0.4s; }
+  .hands span:nth-child(1)::before, .hands span:nth-child(3)::after { content: ""; }
+  @keyframes hop { 50% { transform: translateY(-10px) rotate(8deg); } }
+
+  .controls { display: flex; gap: 14px; }
+  button {
+    font: inherit; font-size: 1.15rem; padding: 12px 30px; border-radius: 999px; cursor: pointer; color: #fff;
+    border: 3px solid transparent;
+  }
+  #startBtn { background: linear-gradient(135deg, var(--pink), var(--orange)); box-shadow: 0 0 20px rgba(255,79,163,0.7); }
+  #stopBtn { background: transparent; border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 14px rgba(53,224,255,0.5); }
+  button:hover:not(:disabled) { transform: translateY(-2px) scale(1.04); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  button:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+
+  .camera {
+    position: relative; width: min(100%, 640px); aspect-ratio: 4 / 3; border-radius: 22px; overflow: hidden; background: #000;
+    border: 4px solid var(--pink); box-shadow: 0 0 0 4px rgba(53,224,255,0.6), 0 0 36px rgba(255,79,163,0.65);
+  }
+  video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  #count {
+    position: absolute; top: 12px; right: 12px; min-width: 66px; padding: 6px 14px; border-radius: 14px; text-align: center;
+    background: rgba(27,8,56,0.8); color: var(--yellow); font-size: 1.7rem; border: 2px solid var(--yellow);
+  }
+  #notice { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px; background: rgba(27,8,56,0.82); font-size: 0.9rem; color: var(--muted); text-align: center; }
+  #notice.error { color: #ff9a9a; }
+
+  /* 전투 무대 */
+  .arena {
+    position: relative; width: min(100%, 640px); height: 210px; border-radius: 22px; overflow: hidden;
+    background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03));
+    border: 3px dashed var(--yellow);
+  }
+  .arena::before { content: "VS"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 2.2rem; color: rgba(255,255,255,0.22); }
+  .arena::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 28px; background: repeating-linear-gradient(90deg, var(--pink) 0 24px, var(--cyan) 24px 48px, var(--yellow) 48px 72px); opacity: 0.35; }
+  .fighter { position: absolute; top: 40px; width: 6.4rem; text-align: center; font-size: 4.8rem; line-height: 1.1; will-change: transform; }
+  #me { left: 6%; } #cpu { right: 6%; }
+  #cpuG { display: inline-block; transform: scaleX(-1); }
+  #spark { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); font-size: 4rem; opacity: 0; pointer-events: none; z-index: 2; }
+
+  .board { width: min(100%, 640px); display: grid; grid-template-columns: repeat(3, 1fr); background: var(--card); border: 3px solid var(--cyan); border-radius: 18px; overflow: hidden; box-shadow: 0 0 22px rgba(53,224,255,0.35); }
+  .cell { padding: 12px 6px; text-align: center; border-right: 2px solid rgba(255,255,255,0.15); }
+  .cell:last-child { border-right: 0; }
+  .cell small { display: block; color: var(--muted); font-size: 0.82rem; margin-bottom: 4px; }
+  .cell b { font-size: 1.45rem; font-weight: 400; }
+  #result.win { color: var(--lime); text-shadow: 0 0 12px var(--lime); }
+  #result.draw { color: var(--yellow); } #result.lose { color: #ff7b9a; }
+
+  .score { width: min(100%, 640px); display: flex; justify-content: space-around; font-size: 1.25rem; padding: 10px; border-radius: 999px; background: var(--card); border: 3px solid var(--pink); }
+  .score .w { color: var(--lime); } .score .d { color: var(--yellow); } .score .l { color: #ff7b9a; }
+
+  .story { width: min(100%, 640px); min-height: 170px; padding: 14px 18px 16px; border-radius: 18px; background: rgba(0,0,0,0.3); border: 3px solid var(--lime); box-shadow: 0 0 22px rgba(140,255,106,0.25); }
+  .story h2 { margin: 0 0 8px; font-size: 1.15rem; font-weight: 400; color: var(--lime); }
+  .story p { margin: 6px 0; line-height: 1.55; font-size: 1.02rem; animation: pop 0.45s ease-out both; }
+  .story p.idle { color: var(--muted); animation: none; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="confetti" id="confetti" aria-hidden="true"></div>
+
+<main>
+  <header>
+    <div class="hands" aria-hidden="true"><span>🎉</span><span>✌️</span><span>✊</span><span>✋</span><span>🪩</span></div>
+    <h1>AI 가위바위보</h1>
+  </header>
+
+  <div class="controls">
+    <button id="startBtn">🎊 게임 시작</button>
+    <button id="stopBtn" disabled>🛑 게임 종료</button>
+  </div>
+
+  <div class="camera">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="count">–</div>
+    <div id="notice">카메라 권한을 허용해 주세요.</div>
+  </div>
+
+  <div class="arena" id="arena">
+    <div class="fighter" id="me"><span id="meG">🙋</span></div>
+    <div class="fighter" id="cpu"><span id="cpuG">🤖</span></div>
+    <div id="spark"></div>
+  </div>
+
+  <div class="board">
+    <div class="cell"><small>내 제스처 (AI 인식)</small><b id="mine">–</b></div>
+    <div class="cell"><small>컴퓨터</small><b id="cpuT">–</b></div>
+    <div class="cell"><small>결과</small><b id="result">–</b></div>
+  </div>
+
+  <div class="score">
+    <span class="w">승: <span id="w">0</span></span>
+    <span class="d">무승부: <span id="d">0</span></span>
+    <span class="l">패: <span id="l">0</span></span>
+  </div>
+
+  <section class="story" aria-live="polite">
+    <h2>⚔️ 전투 기록</h2>
+    <div id="story"><p class="idle">게임을 시작하면 두 손의 전투가 이곳에 기록됩니다.</p></div>
+  </section>
+</main>
+
+<canvas id="fx"></canvas>
+<canvas id="snap" hidden></canvas>
+
+<script>
+  const MODEL_ID = "s-workspace-ozlje/processed-rock-paper-w6jgp-1-vit-base-patch16-224-in21k-t1";
+  const API_KEY  = "NoASsu4mrwqtTBwZr3Bn";
+  const ENDPOINT = `https://serverless.roboflow.com/${MODEL_ID}?api_key=${API_KEY}`;
+  const ROUND_SEC = 5, MIN_CONF = 0.3, SEND_SIZE = 320;
+
+  const EMOJI = { rock: "✊", paper: "✋", scissors: "✌️" };
+  const NAME  = { rock: "주먹", paper: "보자기", scissors: "가위" };
+  const VOICE = { rock: "바위", paper: "보", scissors: "가위" };
+  const LABEL = { rock: "✊ 바위", paper: "✋ 보", scissors: "✌️ 가위" };
+  const BEATS = { rock: "scissors", scissors: "paper", paper: "rock" };
+
+  /* ---------- 전투 시나리오 (매치업별 3종, 5줄씩) ---------- */
+  const STORIES = {
+    "rock>scissors": [
+      ["가위가 날을 번뜩이며 주먹의 손목을 노리고 번개처럼 달려들었다.",
+       "주먹은 피하지 않았다. 관절로 정면에서 받아내자 불꽃이 사방으로 튀었다.",
+       "두 번째 격돌, 가위의 날 끝이 무뎌지며 다리가 후들후들 떨리기 시작했다.",
+       "주먹이 땅이 갈라질 만큼 몸을 비틀어 필살의 어퍼컷을 터뜨렸다.",
+       "가위는 빙글빙글 회전하며 하늘 저편으로 날아가 반짝이는 별이 되었다."],
+      ["가위가 화려한 스텝으로 주먹 주위를 맴돌며 도발했다.",
+       "주먹은 묵묵히 숨을 고르며 가위의 리듬을 읽어 나갔다.",
+       "세 번 연속 스치듯 베어냈지만, 단단한 주먹에는 흠집 하나 나지 않았다.",
+       "허점을 파고든 주먹의 내려찍기가 가위의 두 날 사이를 정확히 꿰뚫었다.",
+       "가위는 '챙그랑' 소리와 함께 경기장 밖 관중석까지 날아가 박혔다."],
+      ["경기장 한가운데, 가위가 두 날을 크게 벌리고 십자 베기를 준비했다.",
+       "주먹이 땅을 박차고 돌진해 가위와 쾅! 하고 정면 충돌했다.",
+       "날과 뼈가 맞부딪히며 번쩍이는 섬광이 경기장을 가득 채웠다.",
+       "연기가 걷히자 갈라진 날로 비틀거리는 가위, 그 앞에 우뚝 선 주먹이 보였다.",
+       "주먹의 마무리 스트레이트가 작렬하자 가위는 폭죽처럼 하늘로 쏘아 올려졌다."]
+    ],
+    "scissors>paper": [
+      ["보자기가 거대한 천막처럼 펼쳐지며 가위를 통째로 감싸려 덮쳐왔다.",
+       "가위는 몸을 낮춰 아슬아슬하게 피하고 보자기의 옆구리를 스치듯 베었다.",
+       "당황한 보자기가 휘감기 공격을 이어갔지만 가위의 날은 점점 더 빨라졌다.",
+       "가위가 회전 베기로 보자기의 가장자리를 한 번, 두 번, 세 번 난도질했다.",
+       "너덜너덜해진 보자기는 바람에 휩쓸려 종잇조각처럼 흩날리며 사라졌다."],
+      ["보자기가 살랑살랑 춤추며 가위의 시선을 현혹시켰다.",
+       "하지만 가위는 눈을 감고 귀로 바람의 결을 읽고 있었다.",
+       "보자기가 정면에서 덮치는 순간, 가위가 번개같이 '싹둑' 날을 열었다.",
+       "갈라진 보자기는 비명을 지르며 허공에서 빙글빙글 맴돌았다.",
+       "가위의 마지막 한 방에 보자기는 색종이 꽃가루가 되어 경기장에 흩뿌려졌다."],
+      ["보자기가 큰 소리로 외치며 가위의 길을 막아섰다.",
+       "가위는 날을 부딪쳐 '챙챙' 소리로 리듬을 맞추며 거리를 좁혔다.",
+       "서로 한 번 엇갈린 뒤, 보자기의 소맷자락이 깔끔하게 반으로 갈렸다.",
+       "충격에 휘청이는 보자기의 중심을 가위가 날렵하게 파고들었다.",
+       "마지막 X자 베기에 보자기는 힘없이 하늘 높이 날려가 구름 위에 걸렸다."]
+    ],
+    "paper>rock": [
+      ["묵직한 주먹이 괴력을 뽐내며 보자기에게 정면으로 돌진했다.",
+       "보자기는 물처럼 부드럽게 몸을 흘려 주먹의 공격을 허공으로 보내 버렸다.",
+       "헛주먹만 휘두르던 주먹은 어느새 숨이 턱까지 차올랐다.",
+       "등을 보인 주먹의 팔을 보자기가 순식간에 휘감아 조여 버렸다.",
+       "버둥대던 주먹이 항복 신호를 보내자, 보자기가 한 번 털어 저 멀리 날려 보냈다."],
+      ["주먹이 땅을 울리며 달려오자 보자기가 거대한 돛처럼 활짝 펼쳐졌다.",
+       "돌진하던 주먹은 보자기의 품에 그대로 파묻혀 앞을 보지 못했다.",
+       "당황한 주먹이 사방으로 주먹질을 퍼부었지만 부드러운 천은 충격을 모조리 삼켜 버렸다.",
+       "보자기가 한 바퀴 휘감아 매듭을 짓자 주먹은 꼼짝달싹 못 하게 되었다.",
+       "마무리로 보자기가 힘껏 휘두르자 주먹은 포물선을 그리며 지평선 너머로 사라졌다."],
+      ["보자기가 하늘 높이 솟아오르며 경기장 전체에 그림자를 드리웠다.",
+       "주먹이 올려다보며 자세를 잡았지만, 그림자 속에서 위치를 잃고 말았다.",
+       "급강하한 보자기가 주먹을 덮치자 먼지 폭풍이 소용돌이쳤다.",
+       "먼지가 걷히자 꽁꽁 싸인 주먹이 번데기처럼 누워 있었다.",
+       "보자기가 가볍게 '휙' 던지자 주먹은 환호하는 관중 위로 날아가 사라졌다."]
+    ],
+    "draw": [
+      ["똑같은 {M} 둘이 경기장 한복판에서 정면으로 마주 섰다.",
+       "쾅! 첫 충돌에 충격파가 퍼지며 관중들의 모자가 날아갔다.",
+       "한 치도 물러서지 않고 맞부딪히기를 몇 차례, 승부는 도무지 갈리지 않았다.",
+       "지쳐 숨을 몰아쉬던 둘은 서로를 바라보며 피식 웃음을 터뜨렸다.",
+       "결국 승부는 다음 라운드로. 둘은 어깨동무를 하고 숨을 골랐다."],
+      ["{M} 대 {M}, 거울을 보는 듯한 대결이 시작되었다.",
+       "한쪽이 파고들면 다른 쪽이 똑같이 받아치는 숨 막히는 공방이 이어졌다.",
+       "서로의 기술을 너무나 잘 알던 둘은 어느 쪽도 결정타를 넣지 못했다.",
+       "마지막 일격까지 같은 타이밍에 부딪혀 거대한 폭발이 일어났다.",
+       "연기가 걷히자 나란히 큰대자로 누운 둘은 하늘만 바라볼 뿐이었다."],
+      ["공정한 승부를 외치던 {M} 둘이 심판의 휘슬과 함께 달려나갔다.",
+       "펑! 하고 맞부딪힌 순간 번쩍이는 별이 사방으로 튀었다.",
+       "밀고 당기기를 거듭하자 경기장 바닥이 둘의 발자국으로 움푹 패였다.",
+       "서로 한 발짝도 양보하지 않는 집념에 관중석에서는 박수가 터져 나왔다.",
+       "심판이 '무승부!'를 외치자 둘은 아쉬운 듯 서로의 어깨를 툭 쳤다."]
+    ]
+  };
+
+  // 가방 방식: 한 바퀴 다 돌 때까지 같은 시나리오가 나오지 않고, 새 바퀴의 첫 장면도 직전과 다르게 뽑음
+  const bags = {}, lastIdx = {};
+  function nextStory(key, moveName) {
+    const pool = STORIES[key];
+    if (!bags[key] || !bags[key].length) {
+      const idx = pool.map((_, i) => i);
+      for (let i = idx.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [idx[i], idx[j]] = [idx[j], idx[i]];
+      }
+      if (idx.length > 1 && idx[idx.length - 1] === lastIdx[key]) {
+        [idx[0], idx[idx.length - 1]] = [idx[idx.length - 1], idx[0]];
+      }
+      bags[key] = idx;
+    }
+    const i = bags[key].pop();
+    lastIdx[key] = i;
+    return pool[i].map(line => line.replaceAll("{M}", moveName));
+  }
+
+  /* ---------- 공통 ---------- */
+  const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const video = $("video"), snap = $("snap"), sctx = snap.getContext("2d");
+  const arena = $("arena"), me = $("me"), cpu = $("cpu"), meG = $("meG"), cpuG = $("cpuG"), spark = $("spark");
+  const score = { w: 0, d: 0, l: 0 };
+  let running = false, runId = 0;
+
+  function notice(msg, err = false) { $("notice").textContent = msg; $("notice").classList.toggle("error", err); }
+  function setResult(kind, text) { $("result").className = kind; $("result").textContent = text; }
+
+  /* ---------- 효과음 (Web Audio로 직접 합성, 외부 파일 불필요) ---------- */
+  let ac = null, noiseB = null, master = null;
+  function audio() {
+    if (!ac) { const C = window.AudioContext || window.webkitAudioContext; if (C) { ac = new C(); master = ac.createGain(); master.connect(ac.destination); } }
+    if (ac && ac.state === "suspended") ac.resume();
+    return ac;
+  }
+  function noise(a) {
+    if (!noiseB) {
+      noiseB = a.createBuffer(1, a.sampleRate * 3.5, a.sampleRate);
+      const d = noiseB.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return noiseB;
+  }
+  // 잔향(금속이 울리는 공간감) — 한 번만 생성
+  let rev = null;
+  function reverb(a) {
+    if (rev) return rev;
+    const len = Math.floor(a.sampleRate * 0.8);
+    const buf = a.createBuffer(2, len, a.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    rev = a.createConvolver(); rev.buffer = buf; rev.connect(master);
+    return rev;
+  }
+
+  // 진짜 칼 부딪히는 소리: ①날이 스치는 "샤악" → ②충격 "탕" → ③금속이 길게 울리는 "칭~" (두 번)
+  function clang(power = 1) {
+    const a = audio(); if (!a) return;
+    const bus = a.createGain(); bus.gain.value = 0.42 * power; bus.connect(master);
+    const wet = a.createGain(); wet.gain.value = 0.3; bus.connect(wet); wet.connect(reverb(a));
+
+    [0, 0.17].forEach((off, k) => {
+      const t = a.currentTime + off, vol = k ? 0.7 : 1, ti = t + 0.07;
+
+      // ① 스치는 소리
+      const sn = a.createBufferSource(); sn.buffer = noise(a);
+      const sbp = a.createBiquadFilter(); sbp.type = "bandpass"; sbp.Q.value = 3;
+      sbp.frequency.setValueAtTime(3000, t); sbp.frequency.exponentialRampToValueAtTime(9000, t + 0.08);
+      const sg = a.createGain();
+      sg.gain.setValueAtTime(0.0001, t); sg.gain.linearRampToValueAtTime(0.35 * vol, t + 0.05);
+      sg.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+      sn.connect(sbp); sbp.connect(sg); sg.connect(bus); sn.start(t, Math.random() * 2, 0.12);
+
+      // ② 충격음 (아주 짧고 날카로운 타격)
+      const hn = a.createBufferSource(); hn.buffer = noise(a);
+      const hhp = a.createBiquadFilter(); hhp.type = "highpass"; hhp.frequency.value = 2500;
+      const hg = a.createGain();
+      hg.gain.setValueAtTime(1.1 * vol, ti); hg.gain.exponentialRampToValueAtTime(0.001, ti + 0.05);
+      hn.connect(hhp); hhp.connect(hg); hg.connect(bus); hn.start(ti, Math.random() * 2, 0.08);
+
+      // ③ 금속 울림: 칼날의 비정수 배음 × 두 칼날(미세 디튜닝 → 울렁이는 떨림)
+      const base = 1000 + Math.random() * 350 + k * 180;
+      [1, 2.76, 5.4, 8.93, 13.3].forEach((r, i) => {
+        [1, 1.012].forEach(det => {
+          const f = base * r * det; if (f > 14000) return;
+          const o = a.createOscillator(), g = a.createGain(), dec = 1.15 - i * 0.17;
+          o.type = "sine"; o.frequency.value = f;
+          g.gain.setValueAtTime(0.0001, ti);
+          g.gain.linearRampToValueAtTime((0.5 / (i + 1)) * vol, ti + 0.002);
+          g.gain.exponentialRampToValueAtTime(0.0005, ti + dec);
+          o.connect(g); g.connect(bus); o.start(ti); o.stop(ti + dec + 0.05);
+        });
+      });
+    });
+  }
+
+  // 관중 환호: 함성(필터링한 노이즈) + 박수 + "와~" 환호성
+  function cheer(level = 1) {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime, dur = 1.6 + 1.4 * level, peak = 0.15 + 0.85 * level;
+    const out = a.createGain(); out.gain.value = 0.5; out.connect(master);
+
+    const n = a.createBufferSource(); n.buffer = noise(a);
+    const bp = a.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.7;
+    bp.frequency.setValueAtTime(700, t); bp.frequency.linearRampToValueAtTime(1300, t + 0.5);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + 0.25);
+    g.gain.setValueAtTime(peak, t + dur * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    n.connect(bp); bp.connect(g); g.connect(out); n.start(t, 0, dur);
+
+    const claps = Math.floor(30 * level) + 6;
+    for (let i = 0; i < claps; i++) {
+      const ct = t + 0.15 + Math.random() * (dur - 0.3);
+      const c = a.createBufferSource(); c.buffer = noise(a);
+      const f = a.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1800 + Math.random() * 1500; f.Q.value = 0.8;
+      const cg = a.createGain();
+      cg.gain.setValueAtTime(0.35, ct); cg.gain.exponentialRampToValueAtTime(0.001, ct + 0.05);
+      c.connect(f); f.connect(cg); cg.connect(out); c.start(ct, Math.random() * 3, 0.06);
+    }
+    const voices = level > 0.7 ? 4 : 2;
+    for (let i = 0; i < voices; i++) {
+      const vt = t + Math.random() * 0.6, f0 = 360 + Math.random() * 220;
+      const o = a.createOscillator(), lp = a.createBiquadFilter(), vg = a.createGain();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f0, vt); o.frequency.exponentialRampToValueAtTime(f0 * 1.4, vt + 0.55);
+      lp.type = "lowpass"; lp.frequency.value = 1500;
+      vg.gain.setValueAtTime(0.0001, vt); vg.gain.linearRampToValueAtTime(0.09 * level + 0.02, vt + 0.15);
+      vg.gain.exponentialRampToValueAtTime(0.001, vt + 0.9);
+      o.connect(lp); lp.connect(vg); vg.connect(out); o.start(vt); o.stop(vt + 0.95);
+    }
+  }
+
+  /* ---------- 음성 ---------- */
+  // 음성이 나오는 동안 효과음을 줄여서 대사가 또렷하게 들리게 함
+  function duck() {
+    if (!ac || !master) return;
+    const t = ac.currentTime;
+    master.gain.cancelScheduledValues(t);
+    master.gain.setValueAtTime(master.gain.value, t);
+    master.gain.linearRampToValueAtTime(0.2, t + 0.1);
+    master.gain.setValueAtTime(0.2, t + 2.4);
+    master.gain.linearRampToValueAtTime(1, t + 3.2);
+  }
+
+  function speak(text, silent = false) {
+    if (!("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ko-KR";
+    u.rate = 1.2; u.pitch = 1.9;   // 빠르고 높은 톤 = 신나는 목소리
+    u.volume = silent ? 0 : 1;
+    const ko = speechSynthesis.getVoices().find(v => v.lang && v.lang.toLowerCase().startsWith("ko"));
+    if (ko) u.voice = ko;
+    speechSynthesis.cancel();
+    if (!silent) duck();
+    speechSynthesis.speak(u);
+  }
+  if ("speechSynthesis" in window) speechSynthesis.getVoices();
+
+  /* ---------- 손 모양 인식 ---------- */
+  function normalize(name) {
+    const s = String(name).toLowerCase().trim();
+    if (s.includes("rock") || s.includes("바위")) return "rock";
+    if (s.includes("paper") || s.includes("보")) return "paper";
+    if (s.includes("sci") || s.includes("ssor") || s.includes("가위")) return "scissors";
+    return null;
+  }
+  function parseAll(data) {
+    const out = {}, p = data.predictions;
+    if (Array.isArray(p)) p.forEach(x => { out[x.class] = x.confidence; });
+    else if (p && typeof p === "object") for (const [k, v] of Object.entries(p)) out[k] = v.confidence;
+    return out;
+  }
+  async function shootOnce() {
+    const s = Math.min(video.videoWidth, video.videoHeight);
+    snap.width = snap.height = SEND_SIZE;
+    sctx.drawImage(video, (video.videoWidth - s) / 2, (video.videoHeight - s) / 2, s, s, 0, 0, SEND_SIZE, SEND_SIZE);
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: snap.toDataURL("image/jpeg", 0.85).split(",")[1]
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return parseAll(await res.json());
+  }
+  async function recognize() {
+    const N = 3, sum = {};
+    for (let i = 0; i < N; i++) {
+      const all = await shootOnce();
+      for (const [k, v] of Object.entries(all)) sum[k] = (sum[k] || 0) + v / N;
+      if (i < N - 1) await sleep(150);
+    }
+    const entries = Object.entries(sum).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) return { mine: null, debug: "모델 응답에 결과가 없음" };
+    const debug = entries.map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`).join(" / ");
+    return { mine: entries[0][1] >= MIN_CONF ? normalize(entries[0][0]) : null, debug };
+  }
+
+  /* ---------- 전투 애니메이션 ---------- */
+  function resetArena() {
+    [me, cpu, spark, arena].forEach(el => el.getAnimations().forEach(a => a.cancel()));
+    meG.textContent = "🙋"; cpuG.textContent = "🤖";
+  }
+  function pop(el) {
+    el.animate([{ transform: "scale(0.4)" }, { transform: "scale(1.3)", offset: 0.6 }, { transform: "scale(1)" }], { duration: 350 });
+  }
+  function hit(symbol, big = 1) {
+    spark.textContent = symbol;
+    spark.animate([
+      { opacity: 0, transform: "translate(-50%,-50%) scale(0.3)" },
+      { opacity: 1, transform: `translate(-50%,-50%) scale(${1.4 * big})`, offset: 0.4 },
+      { opacity: 0, transform: `translate(-50%,-50%) scale(${2 * big})` }
+    ], { duration: 480 });
+    arena.animate([
+      { transform: "translate(0,0)" }, { transform: "translate(-7px,3px)" },
+      { transform: "translate(7px,-3px)" }, { transform: "translate(0,0)" }
+    ], { duration: 260 });
+  }
+  async function clash(outcome) {
+    const w = arena.clientWidth;
+    const dxm = w / 2 - (me.offsetLeft + me.offsetWidth);
+    const dxc = w / 2 - cpu.offsetLeft;
+    const sparks = ["💥", "⚡", "💢"];
+    for (let i = 0; i < 3; i++) {
+      const d = 460 - i * 60, tilt = 8 + i * 5;
+      const frames = sign => [
+        { transform: "translateX(0) rotate(0deg)" },
+        { transform: `translateX(${sign > 0 ? dxm : dxc}px) rotate(${sign * tilt}deg)`, offset: 0.55 },
+        { transform: "translateX(0) rotate(0deg)" }
+      ];
+      me.animate(frames(1), { duration: d, easing: "ease-in-out" });
+      cpu.animate(frames(-1), { duration: d, easing: "ease-in-out" });
+      await sleep(d * 0.5);
+      hit(sparks[i]); clang(1 + i * 0.2);
+      await sleep(d * 0.5 + 80);
+    }
+    const fly = (el, dir, rot) => el.animate([
+      { transform: "translateX(0) rotate(0deg) scale(1)", opacity: 1 },
+      { transform: `translateX(${dir * w}px) translateY(-130px) rotate(${rot}deg) scale(0.3)`, opacity: 0 }
+    ], { duration: 950, easing: "ease-in", fill: "forwards" });
+    const champ = (el, dx) => el.animate([
+      { transform: "translateX(0) scale(1)" },
+      { transform: `translateX(${dx * 0.5}px) scale(1.45)`, offset: 0.4 },
+      { transform: `translateX(${dx * 0.5}px) scale(1.3)` }
+    ], { duration: 600, fill: "forwards" });
+
+    if (outcome === "win") { hit("💥", 1.8); clang(1.5); cheer(1); champ(me, dxm); fly(cpu, 1, 1080); }
+    else if (outcome === "lose") { hit("💥", 1.8); clang(1.5); cheer(1); champ(cpu, dxc); fly(me, -1, -1080); }
+    else {
+      hit("💫", 1.4); clang(1); cheer(0.4);
+      [me, cpu].forEach((el, k) => el.animate([
+        { transform: "rotate(0)" }, { transform: `rotate(${k ? 18 : -18}deg)` }, { transform: "rotate(0)" }
+      ], { duration: 500 }));
+    }
+    await sleep(1000);
+  }
+
+  async function showStory(lines, alive) {
+    const box = $("story");
+    box.innerHTML = "";
+    for (const line of lines) {
+      if (!alive()) return;
+      const p = document.createElement("p");
+      p.textContent = line;
+      box.appendChild(p);
+      await sleep(850);
+    }
+  }
+
+  /* ---------- 게임 진행 ---------- */
+  async function playRound(alive) {
+    resetArena();
+    $("count").textContent = "📸";
+    notice("손 모양을 인식하는 중…");
+    let r;
+    try { r = await recognize(); }
+    catch (e) { console.error(e); notice("추론 오류: " + e.message, true); return; }
+    if (!alive()) return;
+
+    if (!r.mine) {
+      meG.textContent = "❓";
+      $("mine").textContent = "인식 실패"; $("cpuT").textContent = "–"; setResult("", "–");
+      notice("인식 실패 — " + r.debug, true);
+      return;
+    }
+    const mine = r.mine;
+    $("mine").textContent = LABEL[mine];
+    $("cpuT").textContent = "…"; setResult("", "…");
+    meG.textContent = EMOJI[mine]; pop(me);
+    notice("인식 완료! 컴퓨터가 고르는 중…  (" + r.debug + ")");
+
+    const keys = Object.keys(EMOJI);
+    const cpuMove = keys[Math.floor(Math.random() * keys.length)];
+    for (let i = 0; i < 10; i++) {            // 컴퓨터 룰렛
+      cpuG.textContent = EMOJI[keys[i % 3]];
+      await sleep(90);
+      if (!alive()) return;
+    }
+    cpuG.textContent = EMOJI[cpuMove]; pop(cpu);
+    $("cpuT").textContent = LABEL[cpuMove];
+    await sleep(500);
+    if (!alive()) return;
+
+    const outcome = mine === cpuMove ? "draw" : BEATS[mine] === cpuMove ? "win" : "lose";
+    await clash(outcome);
+    if (!alive()) return;
+
+    if (outcome === "win") { score.w++; setResult("win", "🎉 승"); fireworks(); speak(VOICE[mine] + "가 이겼습니다!"); }
+    else if (outcome === "draw") { score.d++; setResult("draw", "🤝 무승부"); }
+    else { score.l++; setResult("lose", "😵 패"); speak(VOICE[cpuMove] + "가 이겼습니다!"); }
+    $("w").textContent = score.w; $("d").textContent = score.d; $("l").textContent = score.l;
+
+    const key = outcome === "draw" ? "draw"
+      : outcome === "win" ? `${mine}>${cpuMove}` : `${cpuMove}>${mine}`;
+    await showStory(nextStory(key, NAME[mine]), alive);
+    if (alive()) notice("다음 라운드를 준비하세요!");
+  }
+
+  async function gameLoop(id) {
+    const alive = () => running && id === runId;
+    while (alive()) {
+      for (let s = ROUND_SEC; s > 0 && alive(); s--) { $("count").textContent = s; await sleep(1000); }
+      if (!alive()) break;
+      await playRound(alive);
+    }
+  }
+
+  function startGame() {
+    if (running) return;
+    if (!video.srcObject) { notice("카메라가 아직 준비되지 않았습니다.", true); return; }
+    running = true; runId++;
+    speak(" ", true);   // 버튼 클릭 시점에 음성 기능을 미리 활성화
+    audio();            // 효과음(Web Audio)도 미리 활성화
+    score.w = score.d = score.l = 0;
+    ["w", "d", "l"].forEach(k => $(k).textContent = 0);
+    $("mine").textContent = $("cpuT").textContent = "–"; setResult("", "–");
+    resetArena();
+    $("story").innerHTML = '<p class="idle">첫 대결을 기다리는 중… 손 모양을 준비하세요!</p>';
+    notice("카운트가 0이 되면 손 모양을 인식합니다.");
+    $("startBtn").disabled = true; $("stopBtn").disabled = false;
+    gameLoop(runId);
+  }
+  function stopGame() {
+    running = false; runId++;
+    $("startBtn").disabled = false; $("stopBtn").disabled = true;
+    $("count").textContent = "–";
+    notice(`게임 종료 — ${score.w}승 ${score.d}무 ${score.l}패`);
+  }
+  $("startBtn").addEventListener("click", startGame);
+  $("stopBtn").addEventListener("click", stopGame);
+
+  async function initCamera() {
+    try {
+      video.srcObject = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+      });
+      await video.play();
+      notice("‘게임 시작’을 눌러 파티를 시작하세요! 🎊");
+    } catch (e) {
+      notice("카메라를 사용할 수 없습니다: " + e.message + " (https 또는 localhost에서 열어야 합니다)", true);
+    }
+  }
+  initCamera();
+
+  /* ---------- 배경 색종이 ---------- */
+  (function () {
+    const colors = ["#ff4fa3", "#35e0ff", "#ffe14d", "#8cff6a", "#ff9a3d", "#b58cff"];
+    const wrap = $("confetti");
+    for (let i = 0; i < 38; i++) {
+      const c = document.createElement("i");
+      c.style.left = Math.random() * 100 + "%";
+      c.style.background = colors[i % colors.length];
+      c.style.animationDuration = 6 + Math.random() * 8 + "s";
+      c.style.animationDelay = -Math.random() * 12 + "s";
+      c.style.transform = `rotate(${Math.random() * 360}deg)`;
+      wrap.appendChild(c);
+    }
+  })();
+
+  /* ---------- 폭죽 ---------- */
+  const fx = $("fx"), g = fx.getContext("2d");
+  let parts = [], raf = null;
+  function resize() { fx.width = innerWidth; fx.height = innerHeight; }
+  addEventListener("resize", resize); resize();
+  function burst(x, y) {
+    const hue = Math.random() * 360;
+    for (let i = 0; i < 70; i++) {
+      const a = Math.random() * Math.PI * 2, v = 2 + Math.random() * 5;
+      parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, color: `hsl(${hue + Math.random() * 40},100%,60%)` });
+    }
+  }
+  function fireworks() {
+    for (let i = 0; i < 6; i++) setTimeout(() => burst(innerWidth * (0.15 + Math.random() * 0.7), innerHeight * (0.12 + Math.random() * 0.4)), i * 280);
+    if (!raf) raf = requestAnimationFrame(frame);
+  }
+  function frame() {
+    g.globalCompositeOperation = "destination-out"; g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(0, 0, fx.width, fx.height);
+    g.globalCompositeOperation = "lighter";
+    parts = parts.filter(p => p.life > 0);
+    for (const p of parts) {
+      p.vy += 0.06; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.life -= 0.012;
+      g.globalAlpha = Math.max(p.life, 0); g.fillStyle = p.color;
+      g.beginPath(); g.arc(p.x, p.y, 2.6, 0, Math.PI * 2); g.fill();
+    }
+    g.globalAlpha = 1;
+    if (parts.length) raf = requestAnimationFrame(frame); else { raf = null; g.clearRect(0, 0, fx.width, fx.height); }
+  }
+</script>
+</body>
+</html>
